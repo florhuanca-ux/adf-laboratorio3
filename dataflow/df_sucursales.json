@@ -37,6 +37,9 @@
 				},
 				{
 					"name": "split1"
+				},
+				{
+					"name": "derivedColumn1"
 				}
 			],
 			"scriptLines": [
@@ -75,9 +78,10 @@
 				"     multiple: false,",
 				"     pickup: 'any',",
 				"     broadcast: 'auto')~> lookup1",
-				"lookup1 split(!isNull(nombre_restaurante),",
+				"lookup1 split(!isNull(capacidad_mesas) && length(trim(nombre_sucursal))>0 && (tiene_delivery==\"SÍ\" || tiene_delivery==\"NO\") && !isNull(nombre_restaurante),",
 				"     disjoint: false) ~> split1@(validos, rachazados)",
-				"split1@validos sink(allowSchemaDrift: true,",
+				"split1@validos derive(tiene_delivery = iif(tiene_delivery==\"SÍ\", true(), false())) ~> derivedColumn1",
+				"derivedColumn1 sink(allowSchemaDrift: true,",
 				"     validateSchema: false,",
 				"     input(",
 				"          sucursal_id as string,",
