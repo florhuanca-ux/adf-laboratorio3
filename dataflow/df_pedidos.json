@@ -1,0 +1,148 @@
+{
+	"name": "df_pedidos",
+	"properties": {
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "pedidos_csv",
+						"type": "DatasetReference"
+					},
+					"name": "source1"
+				},
+				{
+					"dataset": {
+						"referenceName": "clientes_sql",
+						"type": "DatasetReference"
+					},
+					"name": "source2"
+				},
+				{
+					"dataset": {
+						"referenceName": "sucursales_sql",
+						"type": "DatasetReference"
+					},
+					"name": "source3"
+				},
+				{
+					"dataset": {
+						"referenceName": "promociones_sql",
+						"type": "DatasetReference"
+					},
+					"name": "source4"
+				}
+			],
+			"sinks": [],
+			"transformations": [
+				{
+					"name": "derivedColumn1"
+				},
+				{
+					"name": "derivedColumn2"
+				},
+				{
+					"name": "lookup1"
+				},
+				{
+					"name": "lookup2"
+				},
+				{
+					"name": "lookup3"
+				},
+				{
+					"name": "split1"
+				}
+			],
+			"scriptLines": [
+				"source(output(",
+				"          pedido_id as string,",
+				"          fecha_pedido as string,",
+				"          hora_pedido as string,",
+				"          cliente_id as string,",
+				"          sucursal_id as string,",
+				"          canal as string,",
+				"          tipo_servicio as string,",
+				"          estado_pedido as string,",
+				"          promocion_id as string,",
+				"          subtotal as string,",
+				"          costo_delivery as string,",
+				"          descuento as string,",
+				"          impuesto as string,",
+				"          total_pedido as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false) ~> source1",
+				"source(output(",
+				"          cliente_id as string,",
+				"          nombre as string,",
+				"          email as string,",
+				"          telefono as string,",
+				"          ciudad as string,",
+				"          fecha_registro as date,",
+				"          segmento as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     format: 'table') ~> source2",
+				"source(output(",
+				"          sucursal_id as string,",
+				"          restaurante_id as string,",
+				"          nombre_sucursal as string,",
+				"          ciudad as string,",
+				"          zona as string,",
+				"          direccion as string,",
+				"          capacidad_mesas as integer,",
+				"          tiene_delivery as boolean",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     format: 'table') ~> source3",
+				"source(output(",
+				"          promocion_id as string,",
+				"          nombre_promocion as string,",
+				"          fecha_inicio as date,",
+				"          fecha_fin as date,",
+				"          porcentaje_descuento as decimal(5,2),",
+				"          canal_aplicable as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     format: 'table') ~> source4",
+				"source1 derive(pedido_id = trim(pedido_id),",
+				"          fecha_pedido =  iif(instr(fecha_pedido,'/')>0, toDate(fecha_pedido,'dd/MM/yyyy'), toDate(fecha_pedido,'yyyy-MM-dd')),",
+				"          hora_pedido = trim(hora_pedido),",
+				"          cliente_id = trim(cliente_id),",
+				"          sucursal_id = trim(sucursal_id) ,",
+				"          canal = iif(upper(trim(canal))=='APP','Aplicación', initCap(lower(trim(canal)))),",
+				"          tipo_servicio = initCap(lower(trim(tipo_servicio))),",
+				"          estado_pedido = initCap(lower(trim(estado_pedido))),",
+				"          promocion_id = trim(promocion_id),",
+				"          subtotal = toDecimal(trim(subtotal),10,2),",
+				"          costo_delivery = toDecimal(trim(costo_delivery),10,2),",
+				"          descuento = toDecimal(trim(descuento),10,2),",
+				"          impuesto = toDecimal(trim(impuesto),10,2),",
+				"          total_pedido = toDecimal(trim(total_pedido),10,2)) ~> derivedColumn1",
+				"derivedColumn1 derive(pedido_id = iif(pedido_id=='PED001002' && cliente_id=='CLI00762', 'PED001003', pedido_id)) ~> derivedColumn2",
+				"lookup2, source2 lookup(derivedColumn1@cliente_id == source2@cliente_id,",
+				"     multiple: false,",
+				"     pickup: 'any',",
+				"     broadcast: 'auto')~> lookup1",
+				"lookup3, source3 lookup(derivedColumn1@sucursal_id == source3@sucursal_id,",
+				"     multiple: false,",
+				"     pickup: 'any',",
+				"     broadcast: 'auto')~> lookup2",
+				"derivedColumn2, source4 lookup(derivedColumn1@promocion_id == source4@promocion_id,",
+				"     multiple: false,",
+				"     pickup: 'any',",
+				"     broadcast: 'auto')~> lookup3",
+				"lookup1 split(!isNull(source2@cliente_id) && !isNull(source3@sucursal_id) && (isNull(derivedColumn1@promocion_id) || !isNull(source4@promocion_id)) && total_pedido>0 && abs(total_pedido - (subtotal+costo_delivery-descuento+impuesto))<0.05,",
+				"     disjoint: false) ~> split1@(validos, rechazados)"
+			]
+		}
+	}
+}
