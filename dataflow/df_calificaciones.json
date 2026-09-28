@@ -97,7 +97,7 @@
 				"source1 derive(puntuacion = toInteger(puntuacion),",
 				"          comentario = iif(isNull(comentario) || length(trim(comentario)) == 0, \"Sin comentario\", trim(comentario)),",
 				"          fecha_calificacion = toDate(fecha_calificacion, 'yyyy-MM-dd')) ~> limpiezaCalificaciones",
-				"lookup1 split(toInteger(puntuacion) >= 1 && toInteger(puntuacion) <= 5,",
+				"lookup1 split(toInteger(puntuacion) >= 1 && toInteger(puntuacion) <= 5 && !isNull(fecha_pedido) && !isNull(nombre),",
 				"     disjoint: false) ~> Valido@(validos, rechazados)",
 				"lookup2, source2 lookup(source1@pedido_id == source2@pedido_id,",
 				"     multiple: false,",
