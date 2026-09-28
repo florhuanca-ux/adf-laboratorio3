@@ -10,6 +10,20 @@
 						"type": "DatasetReference"
 					},
 					"name": "source1"
+				},
+				{
+					"dataset": {
+						"referenceName": "pedidos_sql",
+						"type": "DatasetReference"
+					},
+					"name": "source2"
+				},
+				{
+					"dataset": {
+						"referenceName": "clientes_sql",
+						"type": "DatasetReference"
+					},
+					"name": "source3"
 				}
 			],
 			"sinks": [
@@ -27,6 +41,12 @@
 				},
 				{
 					"name": "Valido"
+				},
+				{
+					"name": "lookup1"
+				},
+				{
+					"name": "lookup2"
 				}
 			],
 			"scriptLines": [
@@ -41,11 +61,52 @@
 				"     allowSchemaDrift: true,",
 				"     validateSchema: false,",
 				"     ignoreNoFilesFound: false) ~> source1",
+				"source(output(",
+				"          pedido_id as string,",
+				"          fecha_pedido as date,",
+				"          hora_pedido as timestamp,",
+				"          cliente_id as string,",
+				"          sucursal_id as string,",
+				"          canal as string,",
+				"          tipo_servicio as string,",
+				"          estado_pedido as string,",
+				"          promocion_id as string,",
+				"          subtotal as decimal(12,2),",
+				"          costo_delivery as decimal(12,2),",
+				"          descuento as decimal(12,2),",
+				"          impuesto as decimal(12,2),",
+				"          total_pedido as decimal(12,2)",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     format: 'table') ~> source2",
+				"source(output(",
+				"          cliente_id as string,",
+				"          nombre as string,",
+				"          email as string,",
+				"          telefono as string,",
+				"          ciudad as string,",
+				"          fecha_registro as date,",
+				"          segmento as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     format: 'table') ~> source3",
 				"source1 derive(puntuacion = toInteger(puntuacion),",
 				"          comentario = iif(isNull(comentario) || length(trim(comentario)) == 0, \"Sin comentario\", trim(comentario)),",
 				"          fecha_calificacion = toDate(fecha_calificacion, 'yyyy-MM-dd')) ~> limpiezaCalificaciones",
-				"limpiezaCalificaciones split(toInteger(puntuacion) >= 1 && toInteger(puntuacion) <= 5,",
+				"lookup1 split(toInteger(puntuacion) >= 1 && toInteger(puntuacion) <= 5,",
 				"     disjoint: false) ~> Valido@(validos, rechazados)",
+				"lookup2, source2 lookup(source1@pedido_id == source2@pedido_id,",
+				"     multiple: false,",
+				"     pickup: 'any',",
+				"     broadcast: 'auto')~> lookup1",
+				"limpiezaCalificaciones, source3 lookup(source1@cliente_id == source3@cliente_id,",
+				"     multiple: false,",
+				"     pickup: 'any',",
+				"     broadcast: 'auto')~> lookup2",
 				"Valido@validos sink(allowSchemaDrift: true,",
 				"     validateSchema: false,",
 				"     input(",
