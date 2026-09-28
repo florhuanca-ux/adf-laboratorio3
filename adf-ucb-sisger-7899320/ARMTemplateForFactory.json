@@ -1517,6 +1517,20 @@
 								"type": "DatasetReference"
 							},
 							"name": "source1"
+						},
+						{
+							"dataset": {
+								"referenceName": "pedidos_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source2"
+						},
+						{
+							"dataset": {
+								"referenceName": "clientes_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source3"
 						}
 					],
 					"sinks": [
@@ -1534,6 +1548,12 @@
 						},
 						{
 							"name": "Valido"
+						},
+						{
+							"name": "lookup1"
+						},
+						{
+							"name": "lookup2"
 						}
 					],
 					"scriptLines": [
@@ -1548,11 +1568,52 @@
 						"     allowSchemaDrift: true,",
 						"     validateSchema: false,",
 						"     ignoreNoFilesFound: false) ~> source1",
+						"source(output(",
+						"          pedido_id as string,",
+						"          fecha_pedido as date,",
+						"          hora_pedido as timestamp,",
+						"          cliente_id as string,",
+						"          sucursal_id as string,",
+						"          canal as string,",
+						"          tipo_servicio as string,",
+						"          estado_pedido as string,",
+						"          promocion_id as string,",
+						"          subtotal as decimal(12,2),",
+						"          costo_delivery as decimal(12,2),",
+						"          descuento as decimal(12,2),",
+						"          impuesto as decimal(12,2),",
+						"          total_pedido as decimal(12,2)",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source2",
+						"source(output(",
+						"          cliente_id as string,",
+						"          nombre as string,",
+						"          email as string,",
+						"          telefono as string,",
+						"          ciudad as string,",
+						"          fecha_registro as date,",
+						"          segmento as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source3",
 						"source1 derive(puntuacion = toInteger(puntuacion),",
 						"          comentario = iif(isNull(comentario) || length(trim(comentario)) == 0, \"Sin comentario\", trim(comentario)),",
 						"          fecha_calificacion = toDate(fecha_calificacion, 'yyyy-MM-dd')) ~> limpiezaCalificaciones",
-						"limpiezaCalificaciones split(toInteger(puntuacion) >= 1 && toInteger(puntuacion) <= 5,",
+						"lookup1 split(toInteger(puntuacion) >= 1 && toInteger(puntuacion) <= 5 && !isNull(fecha_pedido) && !isNull(nombre),",
 						"     disjoint: false) ~> Valido@(validos, rechazados)",
+						"lookup2, source2 lookup(source1@pedido_id == source2@pedido_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup1",
+						"limpiezaCalificaciones, source3 lookup(source1@cliente_id == source3@cliente_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup2",
 						"Valido@validos sink(allowSchemaDrift: true,",
 						"     validateSchema: false,",
 						"     input(",
@@ -1584,6 +1645,8 @@
 			},
 			"dependsOn": [
 				"[concat(variables('factoryId'), '/datasets/calificaciones_csv')]",
+				"[concat(variables('factoryId'), '/datasets/pedidos_sql')]",
+				"[concat(variables('factoryId'), '/datasets/clientes_sql')]",
 				"[concat(variables('factoryId'), '/datasets/calificaciones_sql')]"
 			]
 		},
@@ -1691,7 +1754,7 @@
 						},
 						{
 							"dataset": {
-								"referenceName": "restaurantes_csv",
+								"referenceName": "restaurantes_sql",
 								"type": "DatasetReference"
 							},
 							"name": "source2"
@@ -1738,12 +1801,13 @@
 						"          restaurante_id as string,",
 						"          nombre_restaurante as string,",
 						"          tipo_cocina as string,",
-						"          calificacion_promedio as string,",
-						"          activo as string",
+						"          calificacion_promedio as decimal(3,1),",
+						"          activo as boolean",
 						"     ),",
 						"     allowSchemaDrift: true,",
 						"     validateSchema: false,",
-						"     ignoreNoFilesFound: false) ~> source2",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source2",
 						"source1 derive(sucursal_id = trim(sucursal_id),",
 						"          restaurante_id = trim(restaurante_id),",
 						"          nombre_sucursal = initCap(lower(trim(nombre_sucursal))),",
@@ -1756,7 +1820,7 @@
 						"     multiple: false,",
 						"     pickup: 'any',",
 						"     broadcast: 'auto')~> lookup1",
-						"lookup1 split(!isNull(capacidad_mesas) && length(trim(nombre_sucursal))>0 && (tiene_delivery==\"SÍ\" || tiene_delivery==\"NO\") && !isNull(nombre_restaurante),",
+						"lookup1 split(!isNull(capacidad_mesas) && capacidad_mesas>0 && length(trim(nombre_sucursal))>0 && !isNull(direccion) && length(trim(direccion))>0 && !isNull(nombre_restaurante),",
 						"     disjoint: false) ~> split1@(validos, rachazados)",
 						"split1@validos derive(tiene_delivery = iif(tiene_delivery==\"SÍ\", true(), false())) ~> derivedColumn1",
 						"derivedColumn1 sink(allowSchemaDrift: true,",
@@ -1784,7 +1848,7 @@
 			},
 			"dependsOn": [
 				"[concat(variables('factoryId'), '/datasets/sucursales_csv')]",
-				"[concat(variables('factoryId'), '/datasets/restaurantes_csv')]",
+				"[concat(variables('factoryId'), '/datasets/restaurantes_sql')]",
 				"[concat(variables('factoryId'), '/datasets/sucursales_sql')]"
 			]
 		},
@@ -2069,6 +2133,1368 @@
 			"dependsOn": [
 				"[concat(variables('factoryId'), '/datasets/promociones_csv')]",
 				"[concat(variables('factoryId'), '/datasets/promociones_sql')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_repartidores')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "repartidores_csv",
+								"type": "DatasetReference"
+							},
+							"name": "source1"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "repartidores_sql",
+								"type": "DatasetReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "derivedColumn1"
+						},
+						{
+							"name": "split1"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          repartidor_id as string,",
+						"          nombre_repartidor as string,",
+						"          tipo_vehiculo as string,",
+						"          ciudad_base as string,",
+						"          fecha_alta as string,",
+						"          activo as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false) ~> source1",
+						"source1 derive(repartidor_id = trim(repartidor_id),",
+						"          nombre_repartidor = initCap(lower(trim(nombre_repartidor))),",
+						"          tipo_vehiculo = initCap(lower(trim(tipo_vehiculo))) ,",
+						"          ciudad_base = iif(upper(trim(ciudad_base))=='CBA','Cochabamba', initCap(lower(trim(ciudad_base)))) ,",
+						"          fecha_alta = iif(instr(fecha_alta,'/')>0, toDate(fecha_alta,'dd/MM/yyyy'), toDate(fecha_alta,'yyyy-MM-dd')),",
+						"          activo = iif(lower(trim(activo))=='sí', true(), false())) ~> derivedColumn1",
+						"derivedColumn1 split(!isNull(ciudad_base) && length(trim(ciudad_base))>0,",
+						"     disjoint: false) ~> split1@(validos, rechazados)",
+						"split1@validos sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     input(",
+						"          repartidor_id as string,",
+						"          nombre_repartidor as string,",
+						"          tipo_vehiculo as string,",
+						"          ciudad_base as string,",
+						"          fecha_alta as date,",
+						"          activo as boolean",
+						"     ),",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     format: 'table',",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true,",
+						"     errorHandlingOption: 'stopOnFirstError',",
+						"     mapColumn(",
+						"          repartidor_id,",
+						"          nombre_repartidor,",
+						"          tipo_vehiculo,",
+						"          ciudad_base,",
+						"          fecha_alta,",
+						"          activo",
+						"     )) ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/repartidores_csv')]",
+				"[concat(variables('factoryId'), '/datasets/repartidores_sql')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_pedidos')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "pedidos_csv",
+								"type": "DatasetReference"
+							},
+							"name": "source1"
+						},
+						{
+							"dataset": {
+								"referenceName": "clientes_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source2"
+						},
+						{
+							"dataset": {
+								"referenceName": "sucursales_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source3"
+						},
+						{
+							"dataset": {
+								"referenceName": "promociones_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source4"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "pedidos_sql",
+								"type": "DatasetReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "derivedColumn1"
+						},
+						{
+							"name": "derivedColumn2"
+						},
+						{
+							"name": "lookup1"
+						},
+						{
+							"name": "lookup2"
+						},
+						{
+							"name": "lookup3"
+						},
+						{
+							"name": "split1"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          pedido_id as string,",
+						"          fecha_pedido as string,",
+						"          hora_pedido as string,",
+						"          cliente_id as string,",
+						"          sucursal_id as string,",
+						"          canal as string,",
+						"          tipo_servicio as string,",
+						"          estado_pedido as string,",
+						"          promocion_id as string,",
+						"          subtotal as string,",
+						"          costo_delivery as string,",
+						"          descuento as string,",
+						"          impuesto as string,",
+						"          total_pedido as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false) ~> source1",
+						"source(output(",
+						"          cliente_id as string,",
+						"          nombre as string,",
+						"          email as string,",
+						"          telefono as string,",
+						"          ciudad as string,",
+						"          fecha_registro as date,",
+						"          segmento as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source2",
+						"source(output(",
+						"          sucursal_id as string,",
+						"          restaurante_id as string,",
+						"          nombre_sucursal as string,",
+						"          ciudad as string,",
+						"          zona as string,",
+						"          direccion as string,",
+						"          capacidad_mesas as integer,",
+						"          tiene_delivery as boolean",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source3",
+						"source(output(",
+						"          promocion_id as string,",
+						"          nombre_promocion as string,",
+						"          fecha_inicio as date,",
+						"          fecha_fin as date,",
+						"          porcentaje_descuento as decimal(5,2),",
+						"          canal_aplicable as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source4",
+						"source1 derive(pedido_id = trim(pedido_id),",
+						"          fecha_pedido =  iif(instr(fecha_pedido,'/')>0, toDate(fecha_pedido,'dd/MM/yyyy'), toDate(fecha_pedido,'yyyy-MM-dd')),",
+						"          hora_pedido = trim(hora_pedido),",
+						"          cliente_id = trim(cliente_id),",
+						"          sucursal_id = trim(sucursal_id) ,",
+						"          canal = iif(upper(trim(canal))=='APP','Aplicación', initCap(lower(trim(canal)))),",
+						"          tipo_servicio = initCap(lower(trim(tipo_servicio))),",
+						"          estado_pedido = initCap(lower(trim(estado_pedido))),",
+						"          promocion_id = trim(promocion_id),",
+						"          subtotal = toDecimal(trim(subtotal),10,2),",
+						"          costo_delivery = toDecimal(trim(costo_delivery),10,2),",
+						"          descuento = toDecimal(trim(descuento),10,2),",
+						"          impuesto = toDecimal(trim(impuesto),10,2),",
+						"          total_pedido = toDecimal(trim(total_pedido),10,2)) ~> derivedColumn1",
+						"derivedColumn1 derive(pedido_id = iif(pedido_id=='PED001002' && cliente_id=='CLI00762', 'PED001003', pedido_id)) ~> derivedColumn2",
+						"lookup2, source2 lookup(derivedColumn1@cliente_id == source2@cliente_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup1",
+						"lookup3, source3 lookup(derivedColumn1@sucursal_id == source3@sucursal_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup2",
+						"derivedColumn2, source4 lookup(derivedColumn1@promocion_id == source4@promocion_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup3",
+						"lookup1 split(!isNull(source2@cliente_id) && !isNull(source3@sucursal_id) && (isNull(derivedColumn1@promocion_id) || !isNull(source4@promocion_id)) && total_pedido>0 && abs(total_pedido - (subtotal+costo_delivery-descuento+impuesto))<0.05,",
+						"     disjoint: false) ~> split1@(validos, rechazados)",
+						"split1@validos sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     input(",
+						"          pedido_id as string,",
+						"          fecha_pedido as date,",
+						"          hora_pedido as timestamp,",
+						"          cliente_id as string,",
+						"          sucursal_id as string,",
+						"          canal as string,",
+						"          tipo_servicio as string,",
+						"          estado_pedido as string,",
+						"          promocion_id as string,",
+						"          subtotal as decimal(12,2),",
+						"          costo_delivery as decimal(12,2),",
+						"          descuento as decimal(12,2),",
+						"          impuesto as decimal(12,2),",
+						"          total_pedido as decimal(12,2)",
+						"     ),",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     format: 'table',",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true,",
+						"     errorHandlingOption: 'stopOnFirstError',",
+						"     mapColumn(",
+						"          pedido_id,",
+						"          fecha_pedido,",
+						"          hora_pedido,",
+						"          cliente_id = split1@validos@cliente_id,",
+						"          sucursal_id = split1@validos@sucursal_id,",
+						"          canal,",
+						"          tipo_servicio,",
+						"          estado_pedido,",
+						"          promocion_id = split1@validos@promocion_id,",
+						"          subtotal,",
+						"          costo_delivery,",
+						"          descuento,",
+						"          impuesto,",
+						"          total_pedido",
+						"     )) ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/pedidos_csv')]",
+				"[concat(variables('factoryId'), '/datasets/clientes_sql')]",
+				"[concat(variables('factoryId'), '/datasets/sucursales_sql')]",
+				"[concat(variables('factoryId'), '/datasets/promociones_sql')]",
+				"[concat(variables('factoryId'), '/datasets/pedidos_sql')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_carga_dimensiones')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Data flow1",
+						"type": "ExecuteDataFlow",
+						"state": "Inactive",
+						"onInactiveMarkAs": "Succeeded",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_restaurantes",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow2",
+						"type": "ExecuteDataFlow",
+						"state": "Inactive",
+						"onInactiveMarkAs": "Succeeded",
+						"dependsOn": [
+							{
+								"activity": "Data flow1",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_sucursales",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"source2": {},
+									"sink1": {}
+								},
+								"linkedServiceParameters": {}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow3",
+						"type": "ExecuteDataFlow",
+						"state": "Inactive",
+						"onInactiveMarkAs": "Succeeded",
+						"dependsOn": [
+							{
+								"activity": "Data flow2",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_clientes",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow4",
+						"type": "ExecuteDataFlow",
+						"state": "Inactive",
+						"onInactiveMarkAs": "Succeeded",
+						"dependsOn": [
+							{
+								"activity": "Data flow3",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_productos_menu",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow5",
+						"type": "ExecuteDataFlow",
+						"state": "Inactive",
+						"onInactiveMarkAs": "Succeeded",
+						"dependsOn": [
+							{
+								"activity": "Data flow4",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_promociones",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow6",
+						"type": "ExecuteDataFlow",
+						"state": "Inactive",
+						"onInactiveMarkAs": "Succeeded",
+						"dependsOn": [
+							{
+								"activity": "Data flow5",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_repartidores",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow7",
+						"type": "ExecuteDataFlow",
+						"state": "Inactive",
+						"onInactiveMarkAs": "Succeeded",
+						"dependsOn": [
+							{
+								"activity": "Data flow6",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_pedidos",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"source2": {},
+									"source3": {},
+									"source4": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow8",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [
+							{
+								"activity": "Data flow7",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_detalle_pedidos",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"source2": {},
+									"source3": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow9",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [
+							{
+								"activity": "Data flow8",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_inventario_diario",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"source2": {},
+									"source3": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow10",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [
+							{
+								"activity": "Data flow9",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_pagos",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"source2": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow11",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [
+							{
+								"activity": "Data flow10",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_entregas",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"source2": {},
+									"source3": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Data flow12",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [
+							{
+								"activity": "Data flow11",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "df_calificaciones",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"source1": {},
+									"source2": {},
+									"source3": {},
+									"sink1": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/dataflows/df_restaurantes')]",
+				"[concat(variables('factoryId'), '/dataflows/df_sucursales')]",
+				"[concat(variables('factoryId'), '/dataflows/df_clientes')]",
+				"[concat(variables('factoryId'), '/dataflows/df_productos_menu')]",
+				"[concat(variables('factoryId'), '/dataflows/df_promociones')]",
+				"[concat(variables('factoryId'), '/dataflows/df_repartidores')]",
+				"[concat(variables('factoryId'), '/dataflows/df_pedidos')]",
+				"[concat(variables('factoryId'), '/dataflows/df_detalle_pedidos')]",
+				"[concat(variables('factoryId'), '/dataflows/df_inventario_diario')]",
+				"[concat(variables('factoryId'), '/dataflows/df_pagos')]",
+				"[concat(variables('factoryId'), '/dataflows/df_entregas')]",
+				"[concat(variables('factoryId'), '/dataflows/df_calificaciones')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_detalle_pedidos')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "detalle_pedidos_csv",
+								"type": "DatasetReference"
+							},
+							"name": "source1"
+						},
+						{
+							"dataset": {
+								"referenceName": "pedidos_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source2"
+						},
+						{
+							"dataset": {
+								"referenceName": "productos_menu_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source3"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "detalle_pedidos_sql",
+								"type": "DatasetReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "derivedColumn1"
+						},
+						{
+							"name": "lookup1"
+						},
+						{
+							"name": "lookup2"
+						},
+						{
+							"name": "split1"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          detalle_id as string,",
+						"          pedido_id as string,",
+						"          producto_id as string,",
+						"          cantidad as string,",
+						"          precio_unitario as string,",
+						"          descuento_linea as string,",
+						"          total_linea as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false) ~> source1",
+						"source(output(",
+						"          pedido_id as string,",
+						"          fecha_pedido as date,",
+						"          hora_pedido as timestamp,",
+						"          cliente_id as string,",
+						"          sucursal_id as string,",
+						"          canal as string,",
+						"          tipo_servicio as string,",
+						"          estado_pedido as string,",
+						"          promocion_id as string,",
+						"          subtotal as decimal(12,2),",
+						"          costo_delivery as decimal(12,2),",
+						"          descuento as decimal(12,2),",
+						"          impuesto as decimal(12,2),",
+						"          total_pedido as decimal(12,2)",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source2",
+						"source(output(",
+						"          producto_id as string,",
+						"          nombre_producto as string,",
+						"          categoria as string,",
+						"          precio_lista as decimal(12,2),",
+						"          costo_estimado as decimal(12,2),",
+						"          disponible as boolean",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source3",
+						"source1 derive(detalle_id = trim(detalle_id),",
+						"          pedido_id = trim(pedido_id),",
+						"          producto_id = trim(producto_id),",
+						"          cantidad = toInteger(cantidad),",
+						"          precio_unitario = toDecimal(replace(trim(precio_unitario),',','.'),12,2),",
+						"          descuento_linea = toDecimal(descuento_linea,12,2),",
+						"          total_linea = toDecimal(total_linea,12,2)) ~> derivedColumn1",
+						"lookup2, source2 lookup(derivedColumn1@pedido_id == source2@pedido_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup1",
+						"derivedColumn1, source3 lookup(derivedColumn1@producto_id == source3@producto_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup2",
+						"lookup1 split(cantidad > 0 && abs(cantidad*precio_unitario - coalesce(descuento_linea,0) - total_linea) <= 0.02 && !isNull(fecha_pedido) && !isNull(nombre_producto),",
+						"     disjoint: false) ~> split1@(validos, rechazados)",
+						"split1@validos sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     input(",
+						"          detalle_id as string,",
+						"          pedido_id as string,",
+						"          producto_id as string,",
+						"          cantidad as integer,",
+						"          precio_unitario as decimal(12,2),",
+						"          descuento_linea as decimal(12,2),",
+						"          total_linea as decimal(12,2)",
+						"     ),",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     format: 'table',",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true,",
+						"     errorHandlingOption: 'stopOnFirstError',",
+						"     mapColumn(",
+						"          detalle_id,",
+						"          pedido_id = split1@validos@pedido_id,",
+						"          producto_id = split1@validos@producto_id,",
+						"          cantidad,",
+						"          precio_unitario,",
+						"          descuento_linea,",
+						"          total_linea",
+						"     )) ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/detalle_pedidos_csv')]",
+				"[concat(variables('factoryId'), '/datasets/pedidos_sql')]",
+				"[concat(variables('factoryId'), '/datasets/productos_menu_sql')]",
+				"[concat(variables('factoryId'), '/datasets/detalle_pedidos_sql')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_inventario_diario')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "inventario_diario_csv",
+								"type": "DatasetReference"
+							},
+							"name": "source1"
+						},
+						{
+							"dataset": {
+								"referenceName": "sucursales_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source2"
+						},
+						{
+							"dataset": {
+								"referenceName": "productos_menu_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source3"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "inventario_diario_sql",
+								"type": "DatasetReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "derivedColumn1"
+						},
+						{
+							"name": "lookup1"
+						},
+						{
+							"name": "lookup2"
+						},
+						{
+							"name": "split1"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          inventario_id as string,",
+						"          fecha_inventario as string,",
+						"          sucursal_id as string,",
+						"          producto_id as string,",
+						"          stock_inicial as string,",
+						"          entradas as string,",
+						"          salidas as string,",
+						"          stock_final as string,",
+						"          punto_reorden as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false) ~> source1",
+						"source(output(",
+						"          sucursal_id as string,",
+						"          restaurante_id as string,",
+						"          nombre_sucursal as string,",
+						"          ciudad as string,",
+						"          zona as string,",
+						"          direccion as string,",
+						"          capacidad_mesas as integer,",
+						"          tiene_delivery as boolean",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source2",
+						"source(output(",
+						"          producto_id as string,",
+						"          nombre_producto as string,",
+						"          categoria as string,",
+						"          precio_lista as decimal(12,2),",
+						"          costo_estimado as decimal(12,2),",
+						"          disponible as boolean",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source3",
+						"source1 derive(inventario_id = trim(inventario_id),",
+						"          fecha_inventario = toDate(fecha_inventario,'yyyy-MM-dd'),",
+						"          sucursal_id = trim(sucursal_id),",
+						"          producto_id = trim(producto_id),",
+						"          stock_inicial = toInteger(stock_inicial),",
+						"          entradas = toInteger(entradas),",
+						"          salidas = toInteger(salidas),",
+						"          stock_final = toInteger(stock_final),",
+						"          punto_reorden = toInteger(punto_reorden)) ~> derivedColumn1",
+						"lookup2, source2 lookup(derivedColumn1@sucursal_id == source2@sucursal_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup1",
+						"derivedColumn1, source3 lookup(derivedColumn1@producto_id == source3@producto_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup2",
+						"lookup1 split(!isNull(salidas) && stock_final >= 0 && stock_final == stock_inicial + entradas - salidas && !isNull(nombre_sucursal) && !isNull(nombre_producto),",
+						"     disjoint: false) ~> split1@(validos, rechazados)",
+						"split1@validos sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     input(",
+						"          inventario_id as string,",
+						"          fecha_inventario as date,",
+						"          sucursal_id as string,",
+						"          producto_id as string,",
+						"          stock_inicial as integer,",
+						"          entradas as integer,",
+						"          salidas as integer,",
+						"          stock_final as integer,",
+						"          punto_reorden as integer",
+						"     ),",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     format: 'table',",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true,",
+						"     errorHandlingOption: 'stopOnFirstError') ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/inventario_diario_csv')]",
+				"[concat(variables('factoryId'), '/datasets/sucursales_sql')]",
+				"[concat(variables('factoryId'), '/datasets/productos_menu_sql')]",
+				"[concat(variables('factoryId'), '/datasets/inventario_diario_sql')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_pagos')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "pagos_csv",
+								"type": "DatasetReference"
+							},
+							"name": "source1"
+						},
+						{
+							"dataset": {
+								"referenceName": "pedidos_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source2"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "pagos_sql",
+								"type": "DatasetReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "derivedColumn1"
+						},
+						{
+							"name": "lookup1"
+						},
+						{
+							"name": "split1"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          pago_id as string,",
+						"          pedido_id as string,",
+						"          fecha_pago as string,",
+						"          metodo_pago as string,",
+						"          estado_pago as string,",
+						"          monto_pagado as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false) ~> source1",
+						"source(output(",
+						"          pedido_id as string,",
+						"          fecha_pedido as date,",
+						"          hora_pedido as timestamp,",
+						"          cliente_id as string,",
+						"          sucursal_id as string,",
+						"          canal as string,",
+						"          tipo_servicio as string,",
+						"          estado_pedido as string,",
+						"          promocion_id as string,",
+						"          subtotal as decimal(12,2),",
+						"          costo_delivery as decimal(12,2),",
+						"          descuento as decimal(12,2),",
+						"          impuesto as decimal(12,2),",
+						"          total_pedido as decimal(12,2)",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source2",
+						"source1 derive(pago_id = trim(pago_id),",
+						"          pedido_id = trim(pedido_id),",
+						"          fecha_pago = toDate(fecha_pago,'yyyy-MM-dd'),",
+						"          metodo_pago = iif(lower(trim(metodo_pago))=='wallet','Billetera móvil',trim(metodo_pago)),",
+						"          estado_pago = iif(isNull(estado_pago) || length(trim(estado_pago))==0,'Desconocido',trim(estado_pago)),",
+						"          monto_pagado = toDecimal(monto_pagado,12,2)) ~> derivedColumn1",
+						"derivedColumn1, source2 lookup(derivedColumn1@pedido_id == source2@pedido_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup1",
+						"lookup1 split(monto_pagado >= 0 && !isNull(fecha_pedido),",
+						"     disjoint: false) ~> split1@(validos, rechazados)",
+						"split1@validos sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     input(",
+						"          pago_id as string,",
+						"          pedido_id as string,",
+						"          fecha_pago as date,",
+						"          metodo_pago as string,",
+						"          estado_pago as string,",
+						"          monto_pagado as decimal(12,2)",
+						"     ),",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     format: 'table',",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true,",
+						"     errorHandlingOption: 'stopOnFirstError',",
+						"     mapColumn(",
+						"          pago_id,",
+						"          pedido_id = split1@validos@pedido_id,",
+						"          fecha_pago,",
+						"          metodo_pago,",
+						"          estado_pago,",
+						"          monto_pagado",
+						"     )) ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/pagos_csv')]",
+				"[concat(variables('factoryId'), '/datasets/pedidos_sql')]",
+				"[concat(variables('factoryId'), '/datasets/pagos_sql')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_entregas')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "entregas_csv",
+								"type": "DatasetReference"
+							},
+							"name": "source1"
+						},
+						{
+							"dataset": {
+								"referenceName": "pedidos_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source2"
+						},
+						{
+							"dataset": {
+								"referenceName": "repartidores_sql",
+								"type": "DatasetReference"
+							},
+							"name": "source3"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "entregas_sql",
+								"type": "DatasetReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "derivedColumn1"
+						},
+						{
+							"name": "lookup1"
+						},
+						{
+							"name": "lookup2"
+						},
+						{
+							"name": "split1"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          entrega_id as string,",
+						"          pedido_id as string,",
+						"          repartidor_id as string,",
+						"          hora_salida as string,",
+						"          hora_entrega as string,",
+						"          tiempo_entrega_min as string,",
+						"          distancia_km as string,",
+						"          estado_entrega as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false) ~> source1",
+						"source(output(",
+						"          pedido_id as string,",
+						"          fecha_pedido as date,",
+						"          hora_pedido as timestamp,",
+						"          cliente_id as string,",
+						"          sucursal_id as string,",
+						"          canal as string,",
+						"          tipo_servicio as string,",
+						"          estado_pedido as string,",
+						"          promocion_id as string,",
+						"          subtotal as decimal(12,2),",
+						"          costo_delivery as decimal(12,2),",
+						"          descuento as decimal(12,2),",
+						"          impuesto as decimal(12,2),",
+						"          total_pedido as decimal(12,2)",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source2",
+						"source(output(",
+						"          repartidor_id as string,",
+						"          nombre_repartidor as string,",
+						"          tipo_vehiculo as string,",
+						"          ciudad_base as string,",
+						"          fecha_alta as date,",
+						"          activo as boolean",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source3",
+						"source1 derive(entrega_id = trim(entrega_id),",
+						"          pedido_id = trim(pedido_id),",
+						"          repartidor_id = trim(repartidor_id),",
+						"          hora_salida = toTimestamp(hora_salida,'yyyy-MM-dd HH:mm:ss'),",
+						"          hora_entrega = toTimestamp(hora_entrega,'yyyy-MM-dd HH:mm:ss'),",
+						"          tiempo_entrega_min = toInteger(tiempo_entrega_min),",
+						"          distancia_km = toDecimal(distancia_km,6,2),",
+						"          estado_entrega = trim(estado_entrega)) ~> derivedColumn1",
+						"lookup2, source2 lookup(derivedColumn1@pedido_id == source2@pedido_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup1",
+						"derivedColumn1, source3 lookup(derivedColumn1@repartidor_id == source3@repartidor_id,",
+						"     multiple: false,",
+						"     pickup: 'any',",
+						"     broadcast: 'auto')~> lookup2",
+						"lookup1 split((isNull(tiempo_entrega_min) || tiempo_entrega_min >= 0) && !isNull(fecha_pedido) && !isNull(nombre_repartidor),",
+						"     disjoint: false) ~> split1@(validos, rechazados)",
+						"split1@validos sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     input(",
+						"          entrega_id as string,",
+						"          pedido_id as string,",
+						"          repartidor_id as string,",
+						"          hora_salida as timestamp,",
+						"          hora_entrega as timestamp,",
+						"          tiempo_entrega_min as integer,",
+						"          distancia_km as decimal(6,2),",
+						"          estado_entrega as string",
+						"     ),",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     format: 'table',",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true,",
+						"     errorHandlingOption: 'stopOnFirstError',",
+						"     mapColumn(",
+						"          entrega_id,",
+						"          pedido_id = split1@validos@pedido_id,",
+						"          repartidor_id = split1@validos@repartidor_id,",
+						"          hora_salida,",
+						"          hora_entrega,",
+						"          tiempo_entrega_min,",
+						"          distancia_km,",
+						"          estado_entrega",
+						"     )) ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/entregas_csv')]",
+				"[concat(variables('factoryId'), '/datasets/pedidos_sql')]",
+				"[concat(variables('factoryId'), '/datasets/repartidores_sql')]",
+				"[concat(variables('factoryId'), '/datasets/entregas_sql')]"
 			]
 		}
 	]
